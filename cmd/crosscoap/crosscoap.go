@@ -2,8 +2,8 @@ package main
 
 import (
 	"flag"
-	"github.com/besedad/crosscoap"
 	"github.com/die-net/lrucache"
+	"github.com/energomonitor/crosscoap"
 	"log"
 	"net"
 	"os"
