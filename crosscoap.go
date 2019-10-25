@@ -137,6 +137,16 @@ func (p *proxyHandler) cacheHTTPRequest(req *http.Request) (*http.Request, error
 	return cacheReq, err
 }
 
+func (p *proxyHandler) deleteCachedRequest(req *http.Request) {
+	cacheKey := fmt.Sprintf("REQ %s %s", req.Method, req.URL.String())
+	p.HTTPCache.Delete(cacheKey)
+}
+
+func (p *proxyHandler) deleteCachedResponse(req *http.Request) {
+	cacheKey := fmt.Sprintf("RES %s %s", req.Method, req.URL.String())
+	p.HTTPCache.Delete(cacheKey)
+}
+
 func (p *proxyHandler) doHTTPRequestCached(req *http.Request) (*http.Response, []byte, error) {
 	cacheKey := fmt.Sprintf("RES %s %s", req.Method, req.URL.String())
 	httpRespRaw, cached := p.HTTPCache.Get(cacheKey)
@@ -213,14 +223,19 @@ func (p *proxyHandler) ServeCOAP(l *net.UDPConn, a *net.UDPAddr, m *coap.Message
 		var delayRequest bool
 		var err error
 		if m.IsBlock1() {
+			var num uint32
 			var err error
+			num, _, delayRequest = m.Block1()
+			// Is this a request to download first block? If so, delete the previously cached request.
+			if num == 0 {
+				p.deleteCachedRequest(req)
+			}
 			req, err = p.cacheHTTPRequest(req)
 			if err != nil {
 				p.logError("Error on cache HTTP request: %v", err)
 				sendResponse(generateCOAPResponseMessage(m, coap.InternalServerError))
 				return
 			}
-			_, _, delayRequest = m.Block1()
 		}
 
 		// Do HTTP request.
@@ -232,6 +247,11 @@ func (p *proxyHandler) ServeCOAP(l *net.UDPConn, a *net.UDPAddr, m *coap.Message
 		// only then the HTTP request can be sent.
 		doHTTPRequestFunc := p.doHTTPRequest
 		if m.IsBlock2() {
+			// Is this a request to download first block? If so, delete the previously cached response.
+			num, _, _ := m.Block2()
+			if num == 0 {
+				p.deleteCachedResponse(req)
+			}
 			doHTTPRequestFunc = p.doHTTPRequestCached
 		}
 		if !delayRequest {
